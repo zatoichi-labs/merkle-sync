@@ -66,22 +66,6 @@ class SparseMerkleTree:
 
         return self.db[node_hash], branch
 
-    def root(self, key, branch):
-        parent_hash = keccak(self.get(key))
-        
-        validate_length(branch, TREE_HEIGHT)
-        target_bit = 1
-        path = self.path(key)
-
-        for sibling in reversed(branch):
-            if path & target_bit:
-                parent_hash = keccak(sibling + parent_hash)
-            else:
-                parent_hash = keccak(parent_hash + sibling)
-            target_bit <<= 1
-        
-        return parent_hash
-
     def set(self, key, value):
         validate_is_bytes(key)
         validate_length(key, 20)
