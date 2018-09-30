@@ -30,7 +30,8 @@ class ModelContract:
     def root(self):
         return self._smt.root_hash
 
-    def set(self, key: bytes, value: bytes, proof: list):
+    def set(self, key: str, value: bytes, proof: list):
+        key = to_bytes(key)
         # Validate proper input
         branch = self._smt.branch(key)
         assert branch == proof
@@ -40,7 +41,8 @@ class ModelContract:
         proof_updates = self._smt.branch(key)
         self._logs.append((key, value, proof_updates))
     
-    def status(self, key: bytes):
+    def status(self, key: str):
+        key = to_bytes(key)
         return self._smt.get(key)
 
     @property
@@ -53,14 +55,18 @@ class Controller:
     """
     def __init__(self, tree):
         self.tree = tree
+        self._smt = SparseMerkleTree({})
 
-    def branch(self, key: bytes):
-        return self.tree._smt.branch(key)
+    def branch(self, key: str):
+        key = to_bytes(hexstr=key)
+        return self._smt.branch(key)
 
-    def set(self, key: bytes, value: bytes):
+    def set(self, key: str, value: bytes):
         self.tree.set(key, value, self.branch(key))
+        key = to_bytes(hexstr=key)
+        self._smt.set(key, value, self.branch(key))
     
-    def get(self, key: bytes):
+    def get(self, key: str):
         return self.tree.status(key)
 
 
