@@ -2,9 +2,9 @@ from eth_utils import keccak, to_bytes
 from sparse_merkle_tree import SparseMerkleTree, EMPTY_NODE_HASHES, TREE_HEIGHT
 
 
-def calc_root(key: bytes, value: bytes, branch: list):
+def calc_root(key: str, value: int, branch: list):
     parent_hash = keccak(value)
-    path = int.from_bytes(key, byteorder='big')
+    path = int(key, 16)
     target_bit = 1
     
     # Bottom up
@@ -30,20 +30,18 @@ class ModelContract:
     def root(self):
         return self._smt.root_hash
 
-    def set(self, key: str, value: bytes, proof: list):
-        key = to_bytes(key)
+    def set(self, key: str, value: int, proof: list):
         # Validate proper input
-        branch = self._smt.branch(key)
+        branch = self._smt.branch(to_bytes(hexstr=key))
         assert branch == proof
         # Now set value
-        self._smt.set(key, value)
+        self._smt.set(to_bytes(hexstr=key), to_bytes(value))
         # Log the update with the branch for it
-        proof_updates = self._smt.branch(key)
+        proof_updates = self._smt.branch(to_bytes(hexstr=key))
         self._logs.append((key, value, proof_updates))
     
-    def status(self, key: str):
-        key = to_bytes(key)
-        return self._smt.get(key)
+    def status(self, key: str) -> int:
+        return int.from_bytes(self._smt.get(to_bytes(hexstr=key)), byteorder='big')
 
     @property
     def logs(self):
@@ -61,12 +59,12 @@ class Controller:
         key = to_bytes(hexstr=key)
         return self._smt.branch(key)
 
-    def set(self, key: str, value: bytes):
+    def set(self, key: str, value: int):
         self.tree.set(key, value, self.branch(key))
-        key = to_bytes(hexstr=key)
-        self._smt.set(key, value, self.branch(key))
+        value = to_bytes(value)
+        self._smt.set(to_bytes(hexstr=key), value)
     
-    def get(self, key: str):
+    def get(self, key: str) -> int:
         return self.tree.status(key)
 
 
@@ -78,7 +76,7 @@ class Listener:
     def __init__(self, acct, tree):
         self.tree = tree
         self.acct = acct
-        self._value = b''
+        self._value = 0
         self.proof = EMPTY_NODE_HASHES
         self.last_synced = 0
 
@@ -86,8 +84,7 @@ class Listener:
         # When a new log is added, process it
         (key, value, proof) = log
         # Path diff is the logical XOR of the updated key and this account
-        path_diff = (int.from_bytes(key, byteorder='big') ^ \
-                int.from_bytes(self.acct, byteorder='big'))
+        path_diff = (int(key, 16) ^ int(self.acct, 16))
         # Loop through the path updates from root to leaf
         for n in reversed(range(TREE_HEIGHT)):
             # Only update the proof for the part
@@ -103,7 +100,6 @@ class Listener:
         # NOTE: Could probably just replace proof instead of looping,
         #       but this is not the common use case
         if path_diff == 0:
-            print('Updating value from', '0x'+self._value.hex(), 'to', '0x'+value.hex())
             self._value = value
 
     def sync(self):
