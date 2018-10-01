@@ -1,0 +1,4 @@
+eth-utils
+pytest
+web3
+eth-tester[py-evm]
