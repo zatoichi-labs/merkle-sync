@@ -1,12 +1,16 @@
-from eth_utils import keccak
+from eth_utils import keccak, to_int
 
 class ValidationError(Exception):
     pass
 
 TREE_HEIGHT=160
-# keccak(b'')
-EMPTY_LEAF_NODE_HASH = b"\xc5\xd2F\x01\x86\xf7#<\x92~}\xb2\xdc\xc7\x03\xc0\xe5\x00\xb6S\xca\x82';{\xfa\xd8\x04]\x85\xa4p"
-assert EMPTY_LEAF_NODE_HASH == keccak(b'')
+# keccak('\x00' * 32)
+EMPTY_LEAF_NODE_HASH = b')\r\xec\xd9T\x8bb\xa8\xd6\x03E\xa9\x888o\xc8K\xa6\xbc\x95H@\x08\xf66/\x93\x16\x0e\xf3\xe5c'
+#keccak(b'')
+#b"\xc5\xd2F\x01\x86\xf7#<\x92~}\xb2\xdc\xc7\x03\xc0\xe5\x00\xb6S\xca\x82';{\xfa\xd8\x04]\x85\xa4p"
+
+# sanity check
+assert EMPTY_LEAF_NODE_HASH == keccak(b'\x00' * 32)
 EMPTY_NODE_HASHES = [EMPTY_LEAF_NODE_HASH]
 
 for _ in range(TREE_HEIGHT-1):
@@ -22,10 +26,6 @@ def validate_length(value, length):
         raise ValidationError("Value is of length {0}.  Must be {1}".format(len(value), length))
 
 
-# sanity check
-assert EMPTY_LEAF_NODE_HASH == keccak(b'')
-
-
 class SparseMerkleTree:
     def __init__(self, db={}):
         self.db = db
@@ -35,9 +35,6 @@ class SparseMerkleTree:
         for i in range(TREE_HEIGHT - 1):
             self.db[EMPTY_NODE_HASHES[i]] = EMPTY_NODE_HASHES[i+1] + EMPTY_NODE_HASHES[i+1]
         self.db[EMPTY_LEAF_NODE_HASH] = b''
-
-    def path(self, key):
-        return int.from_bytes(key, byteorder='big')
 
     def get(self, key):
         value, _ = self._get(key)
@@ -53,7 +50,7 @@ class SparseMerkleTree:
         branch = []
 
         target_bit = 1 << TREE_HEIGHT - 1
-        path = self.path(key)
+        path = to_int(key)
         node_hash = self.root_hash
         for i in range(TREE_HEIGHT):
             if path & target_bit:
@@ -71,7 +68,7 @@ class SparseMerkleTree:
         validate_length(key, 20)
         validate_is_bytes(value)
 
-        path = self.path(key)
+        path = to_int(key)
         self.root_hash = self._set(value, path, 0, self.root_hash)
 
     def _set(self, value, path, depth, node_hash):
