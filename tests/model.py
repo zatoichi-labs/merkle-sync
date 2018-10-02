@@ -1,13 +1,19 @@
-from eth_utils import keccak, to_bytes
+from eth_utils import keccak, to_bytes, to_int
 from sparse_merkle_tree import SparseMerkleTree, EMPTY_NODE_HASHES, TREE_HEIGHT
 
 
+def to_bytes32(value: int) -> bytes:
+    v = to_bytes(value).rjust(32, b'\x00')
+    assert len(v) == 32, "Integer Overflow/Underflow"
+    return v
+
+
 def calc_root(key: str, value: int, branch: list):
-    parent_hash = keccak(value)
+    parent_hash = keccak(to_bytes32(value))
     path = int(key, 16)
-    target_bit = 1
     
     # Bottom up
+    target_bit = 1
     for sibling in reversed(branch):
         # Only update the proof for the part
         # of the path that matches
@@ -35,17 +41,18 @@ class ModelContract:
         branch = self._smt.branch(to_bytes(hexstr=key))
         assert branch == proof
         # Now set value
-        self._smt.set(to_bytes(hexstr=key), to_bytes(value))
+        self._smt.set(to_bytes(hexstr=key), to_bytes32(value))
         # Log the update with the branch for it
         proof_updates = self._smt.branch(to_bytes(hexstr=key))
         self._logs.append((key, value, proof_updates))
     
     def status(self, key: str) -> int:
-        return int.from_bytes(self._smt.get(to_bytes(hexstr=key)), byteorder='big')
+        return to_int(self._smt.get(to_bytes(hexstr=key)))
 
     @property
     def logs(self):
         return self._logs
+
 
 class Controller:
     """
@@ -56,13 +63,11 @@ class Controller:
         self._smt = SparseMerkleTree({})
 
     def branch(self, key: str):
-        key = to_bytes(hexstr=key)
-        return self._smt.branch(key)
+        return self._smt.branch(to_bytes(hexstr=key))
 
     def set(self, key: str, value: int):
         self.tree.set(key, value, self.branch(key))
-        value = to_bytes(value)
-        self._smt.set(to_bytes(hexstr=key), value)
+        self._smt.set(to_bytes(hexstr=key), to_bytes32(value))
     
     def get(self, key: str) -> int:
         return self.tree.status(key)
@@ -113,9 +118,8 @@ class Listener:
     def value(self):
         # Validate that the value is up-to-date
         self.sync()
-        # Validate that the proof is correct (and therefore matches tree)
-        root = calc_root(self.acct, self._value, self.proof)
-        assert root == self.tree.root()
         # NOTE: Sanity check that values line up
         assert self.tree.status(self.acct) == self._value
+        # Validate that the proof is correct (and therefore matches tree)
+        assert calc_root(self.acct, self._value, self.proof) == self.tree.root()
         return self._value
