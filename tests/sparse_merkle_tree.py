@@ -34,7 +34,7 @@ class SparseMerkleTree:
         self.db[self.root_hash] = EMPTY_NODE_HASHES[0] + EMPTY_NODE_HASHES[0]
         for i in range(TREE_HEIGHT - 1):
             self.db[EMPTY_NODE_HASHES[i]] = EMPTY_NODE_HASHES[i+1] + EMPTY_NODE_HASHES[i+1]
-        self.db[EMPTY_LEAF_NODE_HASH] = b''
+        self.db[EMPTY_LEAF_NODE_HASH] = b'\x00' * 32
 
     def get(self, key):
         value, _ = self._get(key)
