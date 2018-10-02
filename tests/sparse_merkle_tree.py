@@ -4,13 +4,14 @@ class ValidationError(Exception):
     pass
 
 TREE_HEIGHT=160
-# keccak('\x00' * 32)
+EMPTY_VALUE=b'\x00' * 32
+# keccak(EMPTY_VALUE)
 EMPTY_LEAF_NODE_HASH = b')\r\xec\xd9T\x8bb\xa8\xd6\x03E\xa9\x888o\xc8K\xa6\xbc\x95H@\x08\xf66/\x93\x16\x0e\xf3\xe5c'
 #keccak(b'')
 #b"\xc5\xd2F\x01\x86\xf7#<\x92~}\xb2\xdc\xc7\x03\xc0\xe5\x00\xb6S\xca\x82';{\xfa\xd8\x04]\x85\xa4p"
 
 # sanity check
-assert EMPTY_LEAF_NODE_HASH == keccak(b'\x00' * 32)
+assert EMPTY_LEAF_NODE_HASH == keccak(EMPTY_VALUE)
 EMPTY_NODE_HASHES = [EMPTY_LEAF_NODE_HASH]
 
 for _ in range(TREE_HEIGHT-1):
@@ -34,7 +35,7 @@ class SparseMerkleTree:
         self.db[self.root_hash] = EMPTY_NODE_HASHES[0] + EMPTY_NODE_HASHES[0]
         for i in range(TREE_HEIGHT - 1):
             self.db[EMPTY_NODE_HASHES[i]] = EMPTY_NODE_HASHES[i+1] + EMPTY_NODE_HASHES[i+1]
-        self.db[EMPTY_LEAF_NODE_HASH] = b'\x00' * 32
+        self.db[EMPTY_LEAF_NODE_HASH] = EMPTY_VALUE
 
     def get(self, key):
         value, _ = self._get(key)
