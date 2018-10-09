@@ -1,26 +1,33 @@
 from eth_utils import keccak, to_int
 
+from web3 import Web3
+sha3 = Web3.soliditySha3
+
+
 class ValidationError(Exception):
     pass
+
 
 TREE_HEIGHT=160
 EMPTY_VALUE=b'\x00' * 32
 # keccak(EMPTY_VALUE)
 EMPTY_LEAF_NODE_HASH = b')\r\xec\xd9T\x8bb\xa8\xd6\x03E\xa9\x888o\xc8K\xa6\xbc\x95H@\x08\xf66/\x93\x16\x0e\xf3\xe5c'
-#keccak(b'')
-#b"\xc5\xd2F\x01\x86\xf7#<\x92~}\xb2\xdc\xc7\x03\xc0\xe5\x00\xb6S\xca\x82';{\xfa\xd8\x04]\x85\xa4p"
+
 
 # sanity check
-assert EMPTY_LEAF_NODE_HASH == keccak(EMPTY_VALUE)
+assert EMPTY_LEAF_NODE_HASH == sha3(['bytes32'], [EMPTY_VALUE])
 EMPTY_NODE_HASHES = [EMPTY_LEAF_NODE_HASH]
 
+
+hash_duplicate = lambda h: sha3(['bytes32', 'bytes32'], [h, h])
 for _ in range(TREE_HEIGHT-1):
-    EMPTY_NODE_HASHES.insert(0, \
-            keccak(EMPTY_NODE_HASHES[0] + EMPTY_NODE_HASHES[0]))
+    EMPTY_NODE_HASHES.insert(0, hash_duplicate(EMPTY_NODE_HASHES[0]))
+
 
 def validate_is_bytes(value):
     if not isinstance(value, bytes):
         raise ValidationError("Value is not of type `bytes`: got '{0}'".format(type(value)))
+
 
 def validate_length(value, length):
     if len(value) != length:
@@ -31,7 +38,7 @@ class SparseMerkleTree:
     def __init__(self, db={}):
         self.db = db
         # Initialize an empty tree with one branch
-        self.root_hash = keccak(EMPTY_NODE_HASHES[0] + EMPTY_NODE_HASHES[0])
+        self.root_hash = hash_duplicate(EMPTY_NODE_HASHES[0])
         self.db[self.root_hash] = EMPTY_NODE_HASHES[0] + EMPTY_NODE_HASHES[0]
         for i in range(TREE_HEIGHT - 1):
             self.db[EMPTY_NODE_HASHES[i]] = EMPTY_NODE_HASHES[i+1] + EMPTY_NODE_HASHES[i+1]
@@ -53,6 +60,8 @@ class SparseMerkleTree:
         target_bit = 1 << TREE_HEIGHT - 1
         path = to_int(key)
         node_hash = self.root_hash
+        # Append the sibling to the branch
+        # Iterate on the parent
         for i in range(TREE_HEIGHT):
             if path & target_bit:
                 branch.append(self.db[node_hash][:32])
@@ -86,7 +95,7 @@ class SparseMerkleTree:
     def exists(self, key):
         validate_is_bytes(key)
         validate_length(key, 20)
-        return (self.get(key) != b'')
+        return (self.get(key) != EMPTY_VALUE)
 
     def delete(self, key):
         """
@@ -95,7 +104,7 @@ class SparseMerkleTree:
         validate_is_bytes(key)
         validate_length(key, 20)
 
-        self.set(key, b'')
+        self.set(key, EMPTY_VALUE)
 
     #
     # Utils
