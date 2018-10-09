@@ -1,5 +1,8 @@
-from eth_utils import keccak, to_bytes, to_int
-from sparse_merkle_tree import SparseMerkleTree, EMPTY_NODE_HASHES, TREE_HEIGHT
+from eth_utils import to_bytes, to_int
+
+
+from web3 import Web3
+sha3 = Web3.soliditySha3
 
 
 def to_bytes32(value: int) -> bytes:
@@ -9,7 +12,7 @@ def to_bytes32(value: int) -> bytes:
 
 
 def calc_root(key: str, value: int, branch: list):
-    parent_hash = keccak(to_bytes32(value))
+    parent_hash = sha3(['uint256'], [value])
     path = int(key, 16)
     
     # Bottom up
@@ -20,14 +23,15 @@ def calc_root(key: str, value: int, branch: list):
         if path & target_bit:
             # branch is in top down order
             # (key is in MSB to LSB order)
-            parent_hash = keccak(sibling + parent_hash)
+            parent_hash = sha3(['bytes32', 'bytes32'], [sibling, parent_hash])
         else:
-            parent_hash = keccak(parent_hash + sibling)
+            parent_hash = sha3(['bytes32', 'bytes32'], [parent_hash, sibling])
         target_bit <<= 1
     
     return parent_hash
 
 
+from sparse_merkle_tree import SparseMerkleTree, EMPTY_NODE_HASHES, TREE_HEIGHT
 class ModelContract:
     def __init__(self):
         self._smt = SparseMerkleTree({})
@@ -70,6 +74,7 @@ class Controller:
         self._smt.set(to_bytes(hexstr=key), to_bytes32(value))
     
     def get(self, key: str) -> int:
+        assert self.tree.status(key) == self._smt.get(to_bytes(hexstr=key))
         return self.tree.status(key)
 
 
@@ -87,25 +92,22 @@ class Listener:
 
     def update_proof(self, log):
         # When a new log is added, process it
-        (key, value, proof) = log
+        (key, value, path_updates) = log
         # Path diff is the logical XOR of the updated key and this account
         path_diff = (int(key, 16) ^ int(self.acct, 16))
-        # Loop through the path updates from root to leaf
-        for n in reversed(range(TREE_HEIGHT)):
-            # Only update the proof for the part
-            # of the path that matches
-            if (path_diff & (1 << n)):
-                break  # Indicates different branch than ours, so exit
-            # proof is in top down order
-            # (key is in MSB to LSB order)
-            i = TREE_HEIGHT - 1 - n  # Flip accessor
-            self.proof[i] = proof[i]  # Update matching node in path
-        
         # Full match to key (no diff), update our tracked value
-        # NOTE: Could probably just replace proof instead of looping,
-        #       but this is not the common use case
+        # NOTE: No need to update the proof
         if path_diff == 0:
             self._value = value
+        else:
+            # Find the first non-zero entry
+            # (place where branch happens between keypaths)
+            i = 0
+            while (path_diff > 1):
+                path_diff >>= 1
+                i += 1
+            # Update sibling in proof where we branch off from the update
+            self.proof[i] = path_updates[i]
 
     def sync(self):
         # Iterate over last unchecked logs, update proof for them
@@ -118,8 +120,8 @@ class Listener:
     def value(self):
         # Validate that the value is up-to-date
         self.sync()
-        # NOTE: Sanity check that values line up
-        assert self.tree.status(self.acct) == self._value
         # Validate that the proof is correct (and therefore matches tree)
         assert calc_root(self.acct, self._value, self.proof) == self.tree.root()
+        # NOTE: Sanity check that values line up
+        assert self.tree.status(self.acct) == self._value
         return self._value
