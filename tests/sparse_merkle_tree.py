@@ -1,8 +1,5 @@
 from eth_utils import keccak, to_int
 
-from web3 import Web3
-sha3 = Web3.soliditySha3
-
 
 class ValidationError(Exception):
     pass
@@ -15,11 +12,12 @@ EMPTY_LEAF_NODE_HASH = b')\r\xec\xd9T\x8bb\xa8\xd6\x03E\xa9\x888o\xc8K\xa6\xbc\x
 
 
 # sanity check
-assert EMPTY_LEAF_NODE_HASH == sha3(['bytes32'], [EMPTY_VALUE])
+assert EMPTY_LEAF_NODE_HASH == keccak(EMPTY_VALUE)
 EMPTY_NODE_HASHES = [EMPTY_LEAF_NODE_HASH]
 
 
-hash_duplicate = lambda h: sha3(['bytes32', 'bytes32'], [h, h])
+hash_duplicate = lambda h: keccak(h + h)
+# Branch for any value in an empty tree in root->leaf order
 for _ in range(TREE_HEIGHT-1):
     EMPTY_NODE_HASHES.insert(0, hash_duplicate(EMPTY_NODE_HASHES[0]))
 
@@ -53,11 +51,14 @@ class SparseMerkleTree:
         return branch
 
     def _get(self, key):
+        """
+        Returns db value and branch in root->leaf order
+        """
         validate_is_bytes(key)
         validate_length(key, 20)
         branch = []
 
-        target_bit = 1 << TREE_HEIGHT - 1
+        target_bit = 1 << (TREE_HEIGHT - 1)
         path = to_int(key)
         node_hash = self.root_hash
         # Append the sibling to the branch
@@ -74,23 +75,37 @@ class SparseMerkleTree:
         return self.db[node_hash], branch
 
     def set(self, key, value):
+        """
+        Returns all updated hashes in root->leaf order
+        """
         validate_is_bytes(key)
         validate_length(key, 20)
         validate_is_bytes(value)
 
         path = to_int(key)
-        self.root_hash = self._set(value, path, 0, self.root_hash)
+        branch = self.branch(key)
+        node = value
+        proof_update = []
 
-    def _set(self, value, path, depth, node_hash):
-        if depth == TREE_HEIGHT:
-            return self._hash_and_save(value)
-        else:
-            node = self.db[node_hash]
-            target_bit = 1 << (TREE_HEIGHT - depth - 1)
+        target_bit = 1
+
+        for sibling in reversed(branch):
+            # Set
+            node_hash = keccak(node)
+            proof_update.insert(0, node_hash)
+            self.db[node_hash] = node
+
+            # Update
             if (path & target_bit):
-                return self._hash_and_save(node[:32] + self._set(value, path, depth+1, node[32:]))
+                node = sibling + node_hash
             else:
-                return self._hash_and_save(self._set(value, path, depth+1, node[:32]) + node[32:])
+                node = node_hash + sibling
+
+            target_bit <<= 1
+
+        self.root_hash = keccak(node)
+        self.db[self.root_hash] = node
+        return proof_update
 
     def exists(self, key):
         validate_is_bytes(key)
@@ -105,18 +120,6 @@ class SparseMerkleTree:
         validate_length(key, 20)
 
         self.set(key, EMPTY_VALUE)
-
-    #
-    # Utils
-    #
-    def _hash_and_save(self, node):
-        """
-        Saves a node into the database and returns its hash
-        """
-
-        node_hash = keccak(node)
-        self.db[node_hash] = node
-        return node_hash
 
     #
     # Dictionary API
