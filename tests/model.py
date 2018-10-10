@@ -120,13 +120,6 @@ class Listener:
 
         # Remember to cache the last index synced
         self._last_synced = len(self._tree.logs)
-
-        # DEBUG: Doesn't work with real contracts
-        branch = self._tree._smt.branch(to_bytes(hexstr=self._key))
-        assert len(self._proof) == len(branch)
-        for i, (a, b) in enumerate(zip(self._proof, branch)):
-            if a != b:
-                print("Element", i, "mismatch")
     
     @property
     def status(self):
