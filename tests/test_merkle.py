@@ -14,6 +14,7 @@ web3 = Web3(EthereumTesterProvider())
 def accounts():
     return web3.eth.accounts
 
+
 class TestContract:
     def __new__(cls, filename):
         with open(filename, 'r') as f:
@@ -59,7 +60,7 @@ def test_listener(accounts, contract):
     # Run the test sequence!
     for v in values:
         c.set(l.acct, v)
-        assert l.value == c.get(l.acct) == v
+        assert c.get(l.acct) == l.status == v
 
 
 @pytest.mark.parametrize("contract", contracts)
@@ -72,4 +73,4 @@ def test_updates(accounts, contract):
         for j, l in enumerate(listeners):
             value = (i*j)
             c.set(l.acct, value)
-            assert l.value == c.get(l.acct) == value
+            assert c.get(l.acct) == l.status == value
