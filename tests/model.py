@@ -37,7 +37,7 @@ class ModelContract:
     def set(self, key: str, value: int, proof: list):
         # Validate proof works for key-value pair
         # NOTE: proof is in root->leaf order
-        assert calc_root(key, value, proof) == self.root()
+        assert calc_root(key, self.status(key), proof) == self.root()
 
         # Now set value (root->leaf order)
         proof_updates = self._smt.set(to_bytes(hexstr=key), to_bytes32(value))
@@ -69,12 +69,13 @@ class Controller:
         # Branch is in leaf->root order
         self.tree.set(key, value, self.branch(key))
         self._smt.set(to_bytes(hexstr=key), to_bytes32(value))
+        assert self._smt.root_hash == self.tree.root()
+        return self._smt.db == self.tree._smt.db
     
     def get(self, key: str) -> int:
         assert self.tree.status(key) == \
                 int.from_bytes(self._smt.get(to_bytes(hexstr=key)), byteorder='big')
         return self.tree.status(key)
-
 
 class Listener:
     """
@@ -85,7 +86,8 @@ class Listener:
         self._tree = tree
         self._key = acct
         self._value = 0
-        self._proof = EMPTY_NODE_HASHES  # root->leaf order
+        # Perform a shallow copy here so we don't reference a constant
+        self._proof = EMPTY_NODE_HASHES.copy()  # root->leaf order
         self._last_synced = 0
 
     @property
@@ -101,13 +103,15 @@ class Listener:
         path_diff = (int(key, 16) ^ int(self._key, 16))
 
         # Full match to key (no diff), update our tracked value
-        # NOTE: No need to update the proof
+        # NOTE: No need to update the proof, the value will change bubble it up
         if path_diff == 0:
             self._value = value
         else:
             # Find the first non-zero entry
             # (place where branch happens between keypaths)
-            i = int(math.log(path_diff, 2))
+            # NOTE: key's MSB is root, but path is in root->leaf order
+            #       so we mirror the entry around to fix this
+            i = TREE_HEIGHT-1-int(math.log(path_diff, 2))
 
             # Update sibling in proof where we branch off from the update
             # NOTE: Proof updates are provided in reverse order from proof
