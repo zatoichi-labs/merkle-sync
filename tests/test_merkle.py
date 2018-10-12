@@ -26,14 +26,15 @@ class TestContract:
         return ImplicitContract(instance)
 
 
-contracts = [
-        ModelContract(),
-        #TestContract('../vyper.json'),
-        #TestContract('../solidity.json')
-    ]
+@pytest.fixture(params=['model'])#,'../vyper.json','../solidity.json'])
+def contract(request):
+    filename = request.param
+    if filename == 'model':
+        return ModelContract()
+    else:
+        return TestContract(filename)
 
 
-@pytest.mark.parametrize("contract", contracts)
 def test_root(accounts, contract):
     empty_value = contract.status(accounts[0])
     assert empty_value == 0
@@ -44,8 +45,8 @@ def test_root(accounts, contract):
     assert root == contract.root()
 
 
-@pytest.mark.parametrize("contract", contracts)
 def test_listener(accounts, contract):
+    c = Controller(contract)
     values = []  # Test sequence
     # Set and reset
     values.append(1)
@@ -55,7 +56,6 @@ def test_listener(accounts, contract):
     # Followed by a reset
     values.append(0)
     # Initialize our actor models
-    c = Controller(contract)
     l = Listener(accounts[0], contract)
     # Run the test sequence!
     for v in values:
@@ -63,14 +63,13 @@ def test_listener(accounts, contract):
         assert c.get(l.acct) == l.status == v
 
 
-@pytest.mark.parametrize("contract", contracts)
 def test_updates(accounts, contract):
     c = Controller(contract)
     listeners = [Listener(a, contract) for a in accounts]
     # Have a bunch of random assigments happen
     # See if one of them blows an assert when syncing
-    for i in range(10):
+    for i in range(1, 11):
         for j, l in enumerate(listeners):
-            value = (i*j)
+            value = i
             c.set(l.acct, value)
             assert c.get(l.acct) == l.status == value
