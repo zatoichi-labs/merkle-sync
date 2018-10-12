@@ -88,11 +88,11 @@ class SparseMerkleTree:
         proof_update = []
 
         target_bit = 1
-
+        # branch is in root->leaf order, so flip
         for sibling in reversed(branch):
             # Set
             node_hash = keccak(node)
-            proof_update.insert(0, node_hash)
+            proof_update.append(node_hash)
             self.db[node_hash] = node
 
             # Update
@@ -105,7 +105,8 @@ class SparseMerkleTree:
 
         self.root_hash = keccak(node)
         self.db[self.root_hash] = node
-        return proof_update
+        # updates need to be in root->leaf order, so flip back
+        return list(reversed(proof_update))
 
     def exists(self, key):
         validate_is_bytes(key)
