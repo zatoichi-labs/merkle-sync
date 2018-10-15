@@ -57,6 +57,9 @@ contract MerkleTree {
             require(root == keccak256(abi.encodePacked(old_node_hash, _proof[0])));
             root = keccak256(abi.encodePacked(new_node_hash, _proof[0]));
         }
+
+        // Finally, set value for key
+        db[_key] = _value;
         
         // Tell the others about the update!
         emit UpdatedBranch(_key, _value, proof_updates);
