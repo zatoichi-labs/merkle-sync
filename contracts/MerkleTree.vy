@@ -49,7 +49,7 @@ def __init__():
 def _set(_key: bytes32, _value: bytes32, _proof: bytes32[160]):
     # Get the party started at the leaf node for _key
     new_node_hash: bytes32 = keccak256(_value)
-    prior_node_hash: bytes32 = keccak256(self.db[_key])
+    old_node_hash: bytes32 = keccak256(self.db[_key])
     
     # For recording the updated proof as we go
     proof_updates: bytes32[160]
@@ -64,17 +64,17 @@ def _set(_key: bytes32, _value: bytes32, _proof: bytes32[160]):
         if ((convert(_key, 'uint256') % 2**(convert(i, 'uint256')+1)) > (2**convert(i, 'uint256'))-1):
             # Right branch
             # Validate proof bottom up
-            assert _proof[lvl-1] == keccak256(concat(_proof[lvl], prior_node_hash))
+            assert _proof[lvl-1] == keccak256(concat(_proof[lvl], old_node_hash))
             # Compute update bottom up
             proof_updates[lvl-1] = keccak256(concat(_proof[lvl], new_node_hash))
         else:  # Left branch
             # Validate proof bottom up
-            assert _proof[lvl-1] == keccak256(concat(prior_node_hash, _proof[lvl]))
+            assert _proof[lvl-1] == keccak256(concat(old_node_hash, _proof[lvl]))
             # Compute update bottom up
             proof_updates[lvl-1] = keccak256(concat(new_node_hash, _proof[lvl]))
 
         # Update loop variables
-        prior_node_hash = _proof[lvl]
+        old_node_hash = _proof[lvl]
         new_node_hash = proof_updates[lvl]
     
     # Validate root hash
@@ -82,12 +82,12 @@ def _set(_key: bytes32, _value: bytes32, _proof: bytes32[160]):
     if (convert(_key, 'uint256') % 2 > 0):
         # Right branch
         # Validate stored root against computed root proof (for existing value)
-        assert self.root == keccak256(concat(_proof[0], prior_node_hash))
+        assert self.root == keccak256(concat(_proof[0], old_node_hash))
         # Update stored root to computed root update (for updated value)
         self.root = keccak256(concat(_proof[0], new_node_hash))
     else:  # Left branch
         # Validate stored root against computed root proof (for existing value)
-        assert self.root == keccak256(concat(prior_node_hash, _proof[0]))
+        assert self.root == keccak256(concat(old_node_hash, _proof[0]))
         # Update stored root to computed root update (for updated value)
         self.root = keccak256(concat(new_node_hash, _proof[0]))
 
