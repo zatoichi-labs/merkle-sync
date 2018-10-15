@@ -25,7 +25,7 @@ def __init__():
 @private
 def _set(_key: bytes32, _value: bytes32, _proof: bytes32[160]):
     #  Start at the leaf
-    old_node_hash: bytes32 = keccak256(self.db[_key])
+    node_hash: bytes32 = keccak256(self.db[_key])
     
     # For recording the updated proof as we go (root->leaf order)
     proof_updates: bytes32[160]
@@ -42,31 +42,28 @@ def _set(_key: bytes32, _value: bytes32, _proof: bytes32[160]):
         # Path traversal right is whether key has bit at `lvl` set
         if bitwise_and(convert(_key, 'uint256'), shift(1, i)):
             # Path goes to right, so sibling is left
-            # Show hash of prior update and sibling matches next level up
-            assert _proof[lvl-1] == keccak256(concat(_proof[lvl], old_node_hash))
+            # Record hash of current node and sibling
+            node_hash = keccak256(concat(_proof[lvl], node_hash))
             # Record hash of node update and sibling
             proof_updates[lvl-1] = keccak256(concat(_proof[lvl], proof_updates[lvl]))
         else:
             # Path goes to left, so sibling is right
-            # Show hash of prior update and sibling matches next level up
-            assert _proof[lvl-1] == keccak256(concat(old_node_hash, _proof[lvl]))
+            # Record hash of current node and sibling
+            node_hash = keccak256(concat(node_hash, _proof[lvl]))
             # Record hash of node update and sibling
             proof_updates[lvl-1] = keccak256(concat(proof_updates[lvl], _proof[lvl]))
-
-        # Update loop variables
-        old_node_hash = _proof[lvl]
     
     # Validate and update root hash using the same methodology
     if bitwise_and(convert(_key, 'uint256'), shift(1, 159)):
         # Path goes to right, so sibling is left
-        # Show hash of prior update and sibling matches stored root
-        assert self.root == keccak256(concat(_proof[0], old_node_hash))
+        # Show hash of current and sibling matches stored root
+        assert self.root == keccak256(concat(_proof[0], node_hash))
         # Update stored root to computed root update (for updated value)
         self.root = keccak256(concat(_proof[0], proof_updates[0]))
     else:
         # Path goes to left, so sibling is right
-        # Show hash of prior update and sibling matches stored root
-        assert self.root == keccak256(concat(old_node_hash, _proof[0]))
+        # Show hash of current and sibling matches stored root
+        assert self.root == keccak256(concat(node_hash, _proof[0]))
         # Update stored root to computed root update (for updated value)
         self.root = keccak256(concat(proof_updates[0], _proof[0]))
 
