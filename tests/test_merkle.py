@@ -26,7 +26,7 @@ class TestContract:
         return ImplicitContract(instance)
 
 
-@pytest.fixture(params=['model'])#,'../vyper.json','../solidity.json'])
+@pytest.fixture(params=['model','../vyper.json','../solidity.json'])
 def contract(request):
     filename = request.param
     if filename == 'model':
