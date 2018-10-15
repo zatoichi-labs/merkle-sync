@@ -1,22 +1,24 @@
 pragma solidity ^0.4.25;
 
 contract MerkleTree {
+    // Event to synchronize with tree updates
     event UpdatedBranch(
         bytes32 indexed key,
         bytes32 indexed value,
-        bytes32[160] branch
+        bytes32[160] branch // Hash updates for key, starting with root
     );
 
+    // Root of the tree. Used to validate state transitions
     bytes32 public root;
 
+    // "key" denotes path from root to leaf (1 is right, 0 is left)
     mapping (bytes32 => bytes32) db;
 
     constructor() public {
         bytes32 empty_node = keccak256(abi.encodePacked(bytes32(0))); // Empty bytes32 value
-        // Compute empty root hash
+        // Compute and set empty root hash
         for (uint i=0; i < 160; i++)
             empty_node = keccak256(abi.encodePacked(empty_node, empty_node));
-        // Set empty root hash
         root = empty_node;
     }
 
@@ -31,17 +33,27 @@ contract MerkleTree {
         bytes32 new_node_hash = keccak256(abi.encodePacked(_value));
         bytes32 old_node_hash = keccak256(abi.encodePacked(db[_key]));
 
-        // Record the updated proof as we go
+        // For recording the updated proof as we go (root->leaf order)
         bytes32[160] memory proof_updates;
         proof_updates[159] = new_node_hash;
 
+        // Validate each step of the proof is correct, traversing from leaf->root
+        // Also, keep track of the merklized updates
         for (uint lvl = 159; lvl > 0; lvl--) {
-            // Path right is whether key has bit at `lvl` set
+            // Keypath is in MSB to LSB order (for root->leaf order), so traverse backwards:
+            // (leaf is bit 0, root is bit 160)
+            // Path traversal right is whether key has bit at `lvl` set
             if ( (uint(_key) & 1 << (160-1-lvl)) > 0 ) {
+                // Path goes to right, so sibling is left
+                // Show hash of prior update and sibling matches next level up
                 require(_proof[lvl-1] == keccak256(abi.encodePacked(_proof[lvl], old_node_hash)));
+                // Record update of hashing prior update and sibling
                 proof_updates[lvl-1] = keccak256(abi.encodePacked(_proof[lvl], new_node_hash));
             } else {
+                // Path goes to left, so sibling is right
+                // Show hash of prior update and sibling matches next level up
                 require(_proof[lvl-1] == keccak256(abi.encodePacked(old_node_hash, _proof[lvl])));
+                // Record update of hashing prior update and sibling
                 proof_updates[lvl-1] = keccak256(abi.encodePacked(new_node_hash, _proof[lvl]));
             }
             // Update loop variables
@@ -49,22 +61,29 @@ contract MerkleTree {
             new_node_hash = proof_updates[lvl];
         }
         
-        // Update the root if we've made it this far
+        // Validate and update root hash using the same methodology
         if ( (uint(_key) & 1 << (160-1)) > 0 ) {
+            // Path goes to right, so sibling is left
+            // Show hash of prior update and sibling matches stored root
             require(root == keccak256(abi.encodePacked(_proof[0], old_node_hash)));
+            // Update stored root to computed root update (for updated value)
             root = keccak256(abi.encodePacked(_proof[0], new_node_hash));
         } else {
+            // Path goes to left, so sibling is right
+            // Show hash of prior update and sibling matches stored root
             require(root == keccak256(abi.encodePacked(old_node_hash, _proof[0])));
+            // Update stored root to computed root update (for updated value)
             root = keccak256(abi.encodePacked(new_node_hash, _proof[0]));
         }
 
-        // Finally, set value for key
+        // Finally update value in db since we validated the proof
         db[_key] = _value;
         
         // Tell the others about the update!
         emit UpdatedBranch(_key, _value, proof_updates);
     }
 
+    // Update these functions for whatever use case you have here
     function set(
         address _acct,
         uint256 _status,

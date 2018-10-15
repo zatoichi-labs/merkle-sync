@@ -1,15 +1,4 @@
-# Implementation of a Sparse Merkle Tree in Vyper
-
-# IDEA: Validate proof to transition root, then emit the proof and have clients
-#       parse logs to keep their own personal proof up to date
-# Args: key, value, proof (existing value)
-# 1. Validate proof is correct for existing value
-# 2. Change the value
-# 3. Recompute the merkle root with the updated value
-# 4. Emit the updated proof as an event (an index of which location it touches)
-
-# Clients can loop over each emitted event with indices they are interested in
-# and update their own proofs
+# Event to synchronize with tree updates
 UpdatedBranch: event({
         key: indexed(bytes32),
         value: indexed(bytes32),
@@ -27,27 +16,15 @@ db: bytes32[bytes32]  # Key: Value DB (empty to start)
 @public
 def __init__():
     empty_node: bytes32 = keccak256(convert(0, 'bytes32'))  # Empty bytes32
-    # each node is hash(left, right), where left/right are also empty
+    # Compute and set empty root hash
     for lvl in range(160):
         empty_node = keccak256(concat(empty_node, empty_node))
-    # Merkle root for a tree of height N that is empty
     self.root = empty_node
 
 
-#@dev   This function takes a key-value pair and the existing proof required to
-#       show that that the value is correct to others. The proof is validated
-#       and updated to reflect what it would be with the value modified, and
-#       it is then emitted as a log so that others may iterate over transactions
-#       to this contract and keep their own personal proofs up to date for changes
-#       to keys that affect their own. This has the side benefits of reducing
-#       linkability of keys to specific addresses querying them, as well as
-#       reducing data storage in the contract by offloading to event storage.
-#@param _key    bytes32     key used to lookup existing value and set new one
-#@param _value  bytes32     value to update to
-#@param _proof  bytes32[N]  proof for N-depth tree
 @private
 def _set(_key: bytes32, _value: bytes32, _proof: bytes32[160]):
-    # Get the party started at the leaf node for _key
+    #  Start at the leaf
     new_node_hash: bytes32 = keccak256(_value)
     old_node_hash: bytes32 = keccak256(self.db[_key])
     
@@ -55,38 +32,41 @@ def _set(_key: bytes32, _value: bytes32, _proof: bytes32[160]):
     proof_updates: bytes32[160]
     proof_updates[159] = new_node_hash
     
-    # Validate each step of the proof is correct
+    # Validate each step of the proof is correct, traversing from leaf->root
     # Also, keep track of the merklized updates
     for i in range(159): # 0 to 160-1, start at end of proof and travel upwards
         lvl: int128 = 160-1 - i  # 159 to 1 (159 - [0:158] = [159:1])
 
         # Keypath is in MSB to LSB order (for root->leaf order), so traverse backwards:
         # (leaf is bit 0, root is bit 160)
+        # Path traversal right is whether key has bit at `lvl` set
         if bitwise_and(convert(_key, 'uint256'), shift(1, i)):
-            # Right branch
-            # Validate proof bottom up
+            # Path goes to right, so sibling is left
+            # Show hash of prior update and sibling matches next level up
             assert _proof[lvl-1] == keccak256(concat(_proof[lvl], old_node_hash))
-            # Compute update bottom up
+            # Record update of hashing prior update and sibling
             proof_updates[lvl-1] = keccak256(concat(_proof[lvl], new_node_hash))
-        else:  # Left branch
-            # Validate proof bottom up
+        else:
+            # Path goes to left, so sibling is right
+            # Show hash of prior update and sibling matches next level up
             assert _proof[lvl-1] == keccak256(concat(old_node_hash, _proof[lvl]))
-            # Compute update bottom up
+            # Record update of hashing prior update and sibling
             proof_updates[lvl-1] = keccak256(concat(new_node_hash, _proof[lvl]))
 
         # Update loop variables
         old_node_hash = _proof[lvl]
         new_node_hash = proof_updates[lvl]
     
-    # Validate and update root hash
+    # Validate and update root hash using the same methodology
     if bitwise_and(convert(_key, 'uint256'), shift(1, 159)):
-        # Right branch
-        # Validate stored root against computed root proof (for existing value)
+        # Path goes to right, so sibling is left
+        # Show hash of prior update and sibling matches stored root
         assert self.root == keccak256(concat(_proof[0], old_node_hash))
         # Update stored root to computed root update (for updated value)
         self.root = keccak256(concat(_proof[0], new_node_hash))
-    else:  # Left branch
-        # Validate stored root against computed root proof (for existing value)
+    else:
+        # Path goes to left, so sibling is right
+        # Show hash of prior update and sibling matches stored root
         assert self.root == keccak256(concat(old_node_hash, _proof[0]))
         # Update stored root to computed root update (for updated value)
         self.root = keccak256(concat(new_node_hash, _proof[0]))
@@ -94,24 +74,16 @@ def _set(_key: bytes32, _value: bytes32, _proof: bytes32[160]):
     # Finally update value in db since we validated the proof
     self.db[_key] = _value
 
-    # Emit updated proof so those listening at home can follow along
-    # through event filtering and sub-path updates
+    # Tell the others about the update!
     log.UpdatedBranch(_key, _value, proof_updates)
-    # NOTE: Clients can subscribe to these events and filter on keys
-    #       that match theirs via `bitxor(update.key, my_key)`.
-    #       The first K bits that match theirs should be processed
-    #       because they are on the same branch (diverging at K+1).
-    #       This reduces the total amount of processing the client
-    #       does when iterating through logs from this contract.
 
 
-# Dummy function for testing
+# Update these functions for whatever use case you have here
 @public
 def set(_acct: address, _value: uint256, _proof: bytes32[160]):
     self._set(convert(_acct, 'bytes32'), convert(_value, 'bytes32'), _proof)
 
 
-# Dummy function for testing
 @public
 @constant
 def status(_acct: address) -> uint256:
