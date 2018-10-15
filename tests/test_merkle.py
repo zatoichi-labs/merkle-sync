@@ -3,7 +3,7 @@ import json
 
 from web3 import Web3, EthereumTesterProvider
 from web3.contract import ImplicitContract
-from eth_utils import keccak, to_bytes
+from eth_utils import keccak, to_bytes, to_checksum_address, to_int
 from model import ModelContract, Controller, Listener, calc_root, EMPTY_NODE_HASHES
 
 
@@ -15,15 +15,33 @@ def accounts():
     return web3.eth.accounts
 
 
-class TestContract:
-    def __new__(cls, filename):
+class RealContract(ImplicitContract):
+    def __init__(self, filename):
         with open(filename, 'r') as f:
             interface = json.loads(f.read())
         contract = web3.eth.contract(**interface)
         tx_hash = contract.constructor().transact()
         tx_receipt = web3.eth.waitForTransactionReceipt(tx_hash)
         instance = web3.eth.contract(address=tx_receipt.contractAddress, **interface)
-        return ImplicitContract(instance)
+        super().__init__(instance)
+        # Track event logs from this contract
+        self._event_filter = instance.events.UpdatedBranch.createFilter(fromBlock='latest')
+        self._logs = []
+
+    @property
+    def logs(self):
+        # Synchronize with new transactions
+        for log in self._event_filter.get_new_entries():
+            # List of (key, value, updates) tuples
+            self._logs.append(
+                    (
+                        # key is bytes32, so address is last 20 bytes of convert value
+                        to_checksum_address(log.args.key[12:]),
+                        to_int(log.args.value),
+                        log.args.updates
+                    )
+                )
+        return self._logs
 
 
 @pytest.fixture(params=['model','../vyper.json','../solidity.json'])
@@ -32,7 +50,7 @@ def contract(request):
     if filename == 'model':
         return ModelContract()
     else:
-        return TestContract(filename)
+        return RealContract(filename)
 
 
 def test_root(accounts, contract):
