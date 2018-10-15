@@ -37,7 +37,7 @@ contract MerkleTree {
 
         for (uint lvl = 159; lvl > 0; lvl--) {
             // Path right is whether key has bit at `lvl` set
-            if (_key & bytes32(2**(160-lvl)) > 0) {
+            if ( (uint(_key) & 1 << (160-1-lvl)) > 0 ) {
                 require(_proof[lvl-1] == keccak256(abi.encodePacked(_proof[lvl], old_node_hash)));
                 proof_updates[lvl-1] = keccak256(abi.encodePacked(_proof[lvl], new_node_hash));
             } else {
@@ -50,7 +50,7 @@ contract MerkleTree {
         }
         
         // Update the root if we've made it this far
-        if (_key & 2**0 > 0) {
+        if ( (uint(_key) & 1 << (160-1)) > 0 ) {
             require(root == keccak256(abi.encodePacked(_proof[0], old_node_hash)));
             root = keccak256(abi.encodePacked(_proof[0], new_node_hash));
         } else {

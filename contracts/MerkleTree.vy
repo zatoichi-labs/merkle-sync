@@ -60,8 +60,9 @@ def _set(_key: bytes32, _value: bytes32, _proof: bytes32[160]):
     for i in range(159): # 0 to 160-1, start at end of proof and travel upwards
         lvl: int128 = 160-1 - i  # 159 to 1 (159 - [0:158] = [159:1])
 
-        # Alternative for `_key & 1 << i`:
-        if ((convert(_key, 'uint256') % 2**(convert(i, 'uint256')+1)) > (2**convert(i, 'uint256'))-1):
+        # Keypath is in MSB to LSB order (for root->leaf order), so traverse backwards:
+        # (leaf is bit 0, root is bit 160)
+        if bitwise_and(convert(_key, 'uint256'), shift(1, i)):
             # Right branch
             # Validate proof bottom up
             assert _proof[lvl-1] == keccak256(concat(_proof[lvl], old_node_hash))
@@ -77,9 +78,8 @@ def _set(_key: bytes32, _value: bytes32, _proof: bytes32[160]):
         old_node_hash = _proof[lvl]
         new_node_hash = proof_updates[lvl]
     
-    # Validate root hash
-    # Alternative for `_key & 1`:
-    if (convert(_key, 'uint256') % 2 > 0):
+    # Validate and update root hash
+    if bitwise_and(convert(_key, 'uint256'), shift(1, 159)):
         # Right branch
         # Validate stored root against computed root proof (for existing value)
         assert self.root == keccak256(concat(_proof[0], old_node_hash))
