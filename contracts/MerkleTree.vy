@@ -2,7 +2,7 @@
 UpdatedBranch: event({
         key: indexed(bytes32),
         value: indexed(bytes32),
-        branch: bytes32[160]  # Hash updates for key, starting with root
+        updates: bytes32[160]  # Hash updates for key, starting with root
     })
 
 

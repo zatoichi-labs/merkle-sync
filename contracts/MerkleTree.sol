@@ -5,7 +5,7 @@ contract MerkleTree {
     event UpdatedBranch(
         bytes32 indexed key,
         bytes32 indexed value,
-        bytes32[160] branch // Hash updates for key, starting with root
+        bytes32[160] updates // Hash updates for key, starting with root
     );
 
     // Root of the tree. Used to validate state transitions
