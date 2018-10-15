@@ -51,7 +51,7 @@ def _set(_key: bytes32, _value: bytes32, _proof: bytes32[160]):
     new_node_hash: bytes32 = keccak256(_value)
     old_node_hash: bytes32 = keccak256(self.db[_key])
     
-    # For recording the updated proof as we go
+    # For recording the updated proof as we go (root->leaf order)
     proof_updates: bytes32[160]
     proof_updates[159] = new_node_hash
     
