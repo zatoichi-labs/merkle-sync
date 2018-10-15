@@ -70,7 +70,6 @@ class Controller:
         self.tree.set(key, value, self.branch(key))
         self._smt.set(to_bytes(hexstr=key), to_bytes32(value))
         assert self._smt.root_hash == self.tree.root()
-        return self._smt.db == self.tree._smt.db
     
     def get(self, key: str) -> int:
         assert self.tree.status(key) == \
