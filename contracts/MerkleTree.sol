@@ -27,7 +27,7 @@ contract MerkleTree {
         bytes32 _value,
         bytes32[160] _proof
     )
-        private 
+        private
     {
         // Start at the leaf
         bytes32 new_node_hash = keccak256(abi.encodePacked(_value));
@@ -78,7 +78,7 @@ contract MerkleTree {
 
         // Finally update value in db since we validated the proof
         db[_key] = _value;
-        
+
         // Tell the others about the update!
         emit UpdatedBranch(_key, _value, proof_updates);
     }
