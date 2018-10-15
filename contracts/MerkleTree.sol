@@ -30,12 +30,12 @@ contract MerkleTree {
         private
     {
         // Start at the leaf
-        bytes32 new_node_hash = keccak256(abi.encodePacked(_value));
         bytes32 old_node_hash = keccak256(abi.encodePacked(db[_key]));
 
         // For recording the updated proof as we go (root->leaf order)
         bytes32[160] memory proof_updates;
-        proof_updates[159] = new_node_hash;
+        // Also start updates at leaf
+        proof_updates[159] = keccak256(abi.encodePacked(_value));
 
         // Validate each step of the proof is correct, traversing from leaf->root
         // Also, keep track of the merklized updates
@@ -47,18 +47,17 @@ contract MerkleTree {
                 // Path goes to right, so sibling is left
                 // Show hash of prior update and sibling matches next level up
                 require(_proof[lvl-1] == keccak256(abi.encodePacked(_proof[lvl], old_node_hash)));
-                // Record update of hashing prior update and sibling
-                proof_updates[lvl-1] = keccak256(abi.encodePacked(_proof[lvl], new_node_hash));
+                // Record hash of node update and sibling
+                proof_updates[lvl-1] = keccak256(abi.encodePacked(_proof[lvl], proof_updates[lvl]));
             } else {
                 // Path goes to left, so sibling is right
                 // Show hash of prior update and sibling matches next level up
                 require(_proof[lvl-1] == keccak256(abi.encodePacked(old_node_hash, _proof[lvl])));
-                // Record update of hashing prior update and sibling
-                proof_updates[lvl-1] = keccak256(abi.encodePacked(new_node_hash, _proof[lvl]));
+                // Record hash of node update and sibling
+                proof_updates[lvl-1] = keccak256(abi.encodePacked(proof_updates[lvl], _proof[lvl]));
             }
             // Update loop variables
             old_node_hash = _proof[lvl];
-            new_node_hash = proof_updates[lvl];
         }
         
         // Validate and update root hash using the same methodology
@@ -67,13 +66,13 @@ contract MerkleTree {
             // Show hash of prior update and sibling matches stored root
             require(root == keccak256(abi.encodePacked(_proof[0], old_node_hash)));
             // Update stored root to computed root update (for updated value)
-            root = keccak256(abi.encodePacked(_proof[0], new_node_hash));
+            root = keccak256(abi.encodePacked(_proof[0], proof_updates[0]));
         } else {
             // Path goes to left, so sibling is right
             // Show hash of prior update and sibling matches stored root
             require(root == keccak256(abi.encodePacked(old_node_hash, _proof[0])));
             // Update stored root to computed root update (for updated value)
-            root = keccak256(abi.encodePacked(new_node_hash, _proof[0]));
+            root = keccak256(abi.encodePacked(proof_updates[0], _proof[0]));
         }
 
         // Finally update value in db since we validated the proof
