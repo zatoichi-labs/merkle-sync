@@ -26,7 +26,7 @@ db: bytes32[bytes32]  # Key: Value DB (empty to start)
 
 @public
 def __init__():
-    empty_node: bytes32 = keccak256('')
+    empty_node: bytes32 = keccak256(convert(0, 'bytes32'))  # Empty bytes32
     # each node is hash(left, right), where left/right are also empty
     for lvl in range(160):
         empty_node = keccak256(concat(empty_node, empty_node))

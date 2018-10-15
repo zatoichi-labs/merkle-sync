@@ -12,7 +12,7 @@ contract MerkleTree {
     mapping (bytes32 => bytes32) db;
 
     constructor() public {
-        bytes32 empty_node = keccak256('');
+        bytes32 empty_node = keccak256(abi.encodePacked(bytes32(0))); // Empty bytes32 value
         // Compute empty root hash
         for (uint i=0; i < 160; i++)
             empty_node = keccak256(abi.encodePacked(empty_node, empty_node));
