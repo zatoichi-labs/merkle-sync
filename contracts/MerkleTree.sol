@@ -71,4 +71,12 @@ contract MerkleTree {
     {
         _set(bytes32(_acct), bytes32(_status), _proof);
     }
+
+    function status(address _acct)
+        public
+        view
+        returns (uint256)
+    {
+        return uint256(db[bytes32(_acct)]);
+    }
 }

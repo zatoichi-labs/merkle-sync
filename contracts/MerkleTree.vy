@@ -109,3 +109,10 @@ def _set(_key: bytes32, _value: bytes32, _proof: bytes32[160]):
 @public
 def set(_acct: address, _value: uint256, _proof: bytes32[160]):
     self._set(convert(_acct, 'bytes32'), convert(_value, 'bytes32'), _proof)
+
+
+# Dummy function for testing
+@public
+@constant
+def status(_acct: address) -> uint256:
+    return convert(self.db[convert(_acct, 'bytes32')], 'uint256')
