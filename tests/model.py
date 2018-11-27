@@ -1,34 +1,69 @@
 import math
-from eth_utils import keccak, to_bytes, to_int
-from sparse_merkle_tree import SparseMerkleTree, EMPTY_NODE_HASHES, TREE_HEIGHT
+from eth_utils import keccak, to_bytes, to_int, to_checksum_address, to_canonical_address
+from trie.smt import SparseMerkleTree, SparseMerkleProof, calc_root as bytes_calc_root
 
 
-def to_bytes32(value: int) -> bytes:
+TREE_HEIGHT = 160
+KEYSIZE = TREE_HEIGHT//8
+DEFAULT = b'\x00' * 32
+
+
+def int_to_bytes32(value: int) -> bytes:
     v = to_bytes(value).rjust(32, b'\x00')
     assert len(v) == 32, "Integer Overflow/Underflow"
     return v
 
 
-def calc_root(key: str, value: int, branch: list):
-    parent_hash = keccak(to_bytes32(value))
-    path = int(key, 16)
-    
-    # traverse the path in leaf->root order
-    # branch is in root->leaf order (key is in MSB to LSB order)
-    target_bit = 1
-    for sibling in reversed(branch):
-        if path & target_bit:
-            parent_hash = keccak(sibling + parent_hash)
-        else:
-            parent_hash = keccak(parent_hash + sibling)
-        target_bit <<= 1
-    
-    return parent_hash
+def calc_root(key, value, branch):
+    return bytes_calc_root(to_canonical_address(key), int_to_bytes32(value), branch)
+
+
+class MerkleSyncTree(SparseMerkleTree):
+    def __init__(self):
+        super().__init__(keysize=KEYSIZE, default=DEFAULT)
+
+    def get(self, key):
+        return to_int(super().get(to_canonical_address(key)))
+
+    def branch(self, key):
+        return super().branch(to_canonical_address(key))
+
+    def set(self, key, value):
+        return super().set(to_canonical_address(key), int_to_bytes32(value))
+
+
+_smt = MerkleSyncTree()
+EMPTY_NODE_HASHES = _smt.branch('0x0000000000000000000000000000000000000000')[:]
+del _smt
+
+fmt = lambda h: h[:5] + '...' + h[-3:]
+class MerkleSyncProof:
+    def __init__(self, acct):
+        self._proof = SparseMerkleProof(to_canonical_address(acct), DEFAULT, EMPTY_NODE_HASHES)
+
+    @property
+    def key(self):
+        return to_checksum_address(self._proof.key)
+
+    @property
+    def value(self):
+        return to_int(self._proof.value)
+
+    @property
+    def branch(self):
+        return self._proof.branch
+
+    @property
+    def root_hash(self):
+        return self._proof.root_hash
+
+    def merge(self, key, value, node_updates):
+        self._proof.merge(to_canonical_address(key), int_to_bytes32(value), node_updates)
 
 
 class ModelContract:
     def __init__(self):
-        self._smt = SparseMerkleTree({})
+        self._smt = MerkleSyncTree()
         self._logs = []
     
     def root(self):
@@ -40,41 +75,39 @@ class ModelContract:
         assert calc_root(key, self.status(key), proof) == self.root()
 
         # Now set value (root->leaf order)
-        proof_updates = self._smt.set(to_bytes(hexstr=key), to_bytes32(value))
+        proof_updates = self._smt.set(key, value)
 
         # Log the update with the branch for it
         self._logs.append((key, value, proof_updates))
     
     def status(self, key: str) -> int:
-        return to_int(self._smt.get(to_bytes(hexstr=key)))
+        return self._smt.get(key)
 
     @property
     def logs(self):
         return self._logs
 
 
+# TODO Add optimization that controller tracks key depth to reduce communication
 class Controller:
     """
     The Controller has the full smt and can set any key
     """
     def __init__(self, tree):
         self.tree = tree
-        self._smt = SparseMerkleTree({})
-
-    def branch(self, key: str):
-        # root->leaf order
-        return self._smt.branch(to_bytes(hexstr=key))
+        self._smt = MerkleSyncTree()
 
     def set(self, key: str, value: int):
         # Branch is in leaf->root order
-        self.tree.set(key, value, self.branch(key))
-        self._smt.set(to_bytes(hexstr=key), to_bytes32(value))
+        self.tree.set(key, value, self._smt.branch(key))
+        self._smt.set(key, value)
         assert self._smt.root_hash == self.tree.root()
     
     def get(self, key: str) -> int:
-        assert self.tree.status(key) == \
-                int.from_bytes(self._smt.get(to_bytes(hexstr=key)), byteorder='big')
-        return self.tree.status(key)
+        assert self._smt.root_hash == self.tree.root()
+        assert self.tree.status(key) == self._smt.get(key)
+        return self._smt.get(key)
+
 
 class Listener:
     """
@@ -83,43 +116,14 @@ class Listener:
     """
     def __init__(self, acct, tree):
         self._tree = tree
-        self._key = acct
-        self._value = 0
-        # Perform a shallow copy here so we don't reference a constant
-        self._proof = EMPTY_NODE_HASHES.copy()  # root->leaf order
+        self.acct = acct
+        self._proof = MerkleSyncProof(acct)
         self._last_synced = 0
-
-    @property
-    def acct(self):
-        return self._key
-
-    def update_proof(self, log):
-        # When a new log is added, process it
-        # proof updates are in root->leaf order already
-        (key, value, path_updates) = log
-
-        # Path diff is the logical XOR of the updated key and this account
-        path_diff = (int(key, 16) ^ int(self._key, 16))
-
-        # Full match to key (no diff), update our tracked value
-        # NOTE: No need to update the proof, the value will change bubble it up
-        if path_diff == 0:
-            self._value = value
-        else:
-            # Find the first non-zero entry
-            # (place where branch happens between keypaths)
-            # NOTE: key's MSB is root, but path is in root->leaf order
-            #       so we mirror the entry around to fix this
-            i = TREE_HEIGHT-1-int(math.log(path_diff, 2))
-
-            # Update sibling in proof where we branch off from the update
-            # NOTE: Proof updates are provided in reverse order from proof
-            self._proof[i] = path_updates[i]
 
     def sync(self):
         # Iterate over last unchecked logs, update proof for them
-        for log in self._tree.logs[self._last_synced:]:
-            self.update_proof(log)
+        for key, value, node_updates in self._tree.logs[self._last_synced:]:
+            self._proof.merge(key, value, node_updates)
 
         # Remember to cache the last index synced
         self._last_synced = len(self._tree.logs)
@@ -128,10 +132,8 @@ class Listener:
     def status(self):
         # Validate that the value is up-to-date
         self.sync()
-
         # NOTE: Sanity check that values line up
-        assert self._tree.status(self._key) == self._value
-
+        assert self._tree.status(self._proof.key) == self._proof.value
         # Validate that the proof is correct (and therefore matches tree)
-        assert calc_root(self._key, self._value, self._proof) == self._tree.root()
-        return self._value
+        assert self._proof.root_hash == self._tree.root()
+        return self._proof.value
